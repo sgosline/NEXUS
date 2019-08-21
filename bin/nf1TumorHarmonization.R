@@ -9,11 +9,15 @@ require(tidyverse)
 # plot metadata to display variety of samples#
 #
 plotMetadata<-function(fv.tab,prefix){
-  tab.with.meta<-fv.tab%>%dplyr::select(c('id','specimenID','species','age','sex','tumorType','isCellLine','study','diagnosis'))%>%mutate(Sex=tolower(sex))%>%mutate(cellCulture=tolower(isCellLine))
+  tab.with.meta<-fv.tab%>%dplyr::select(c('specimenID','species','age','sex','tumorType','isCellLine','study','diagnosis'))%>%mutate(Sex=tolower(sex))%>%mutate(cellCulture=tolower(isCellLine))%>%distinct()
 
+  tab.with.meta$sampleSource=sapply(tab.with.meta$isCellLine,function(x) if(!is.na(x) || x==TRUE) return('cell line') else return('tumor'))
   ##first plot: just summary of data by sex
-  ggplot(tab.with.meta)+geom_bar(aes(x=Sex,fill=tumorType),position='dodge')+ggtitle('NF1 RNA-seq samples')
-  ggsave(paste(prefix,'metadataSummary.png',sep=''))
+  ggplot(tab.with.meta)+geom_bar(aes(x=Sex,fill=tumorType),position='dodge')+ggtitle('NF RNA-seq samples')
+  ggsave(paste(prefix,'_sex_metadataSummary.png',sep=''))
+  
+  ggplot(tab.with.meta)+geom_bar(aes(x=sampleSource,fill=tumorType),position='dodge')+ggtitle('NF RNA-seq samples')
+  ggsave(paste(prefix,'_source_metadataSummary.png',sep=''))
   tab.with.meta
 }
 
@@ -22,10 +26,7 @@ plotMetadata<-function(fv.tab,prefix){
 #
 analyzeMetdataWithGenes<-function(full.tab,tab.with.meta,prefix){
 
-  genes.with.meta<-tab.with.meta%>%left_join(dplyr::rename(full.tab,id=synId))%>%unique
-
-
-
+  genes.with.meta<-tab.with.meta%>%left_join(dplyr::rename(full.tab,id=specimenID))%>%unique
  
   ##EVALUATE NORMALIZED MATRIX
 # #look at some marker genes
@@ -40,24 +41,25 @@ analyzeMetdataWithGenes<-function(full.tab,tab.with.meta,prefix){
 
 doPcaPlots<-function(full.tab,tab.with.meta,prefix){
 
-  rownames(tab.with.meta)<-tab.with.meta$id
+  rownames(tab.with.meta)<-tab.with.meta$specimenID
   
   #create matrix
-  combined.mat=reshape2::acast(full.tab,Symbol~synId,value.var="zScore")
+  combined.mat=reshape2::acast(full.tab,Symbol~specimenID,value.var="zScore",fun.aggregate=mean)
 
     #then remove missing
   missing=which(apply(combined.mat,1,function(x) any(is.na(x))))
-  combined.mat=combined.mat[-missing,]
+  if(length(missing)>0)
+    combined.mat=combined.mat[-missing,]
   
   ###PCA ANALYSIS
   library(ggfortify)
-  autoplot(prcomp(t(combined.mat)),data=tab.with.meta,shape='study',col='tumorType')
+  autoplot(prcomp(t(combined.mat)),data=tab.with.meta,shape='diagnosis',col='tumorType')
   ggsave(paste(prefix,'PCA.png',sep=''),width=10)
   loads=prcomp(combined.mat)$x
 
   genes1=rownames(combined.mat)[rev(order(loads[,1]))[1:25]]
 
-  genes.with.meta<-tab.with.meta%>%left_join(dplyr::rename(full.tab,id=synId))%>%unique
+  genes.with.meta<-tab.with.meta%>%left_join(dplyr::rename(full.tab,id=specimenID))%>%unique
 
   #now take those loadings from pc1
   ggplot(subset(genes.with.meta,Symbol%in%genes1[1:10]))+geom_jitter(aes(x=Symbol,y=zScore,col=tumorType,shape=study))+ggtitle('Selected gene counts from PC1')

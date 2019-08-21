@@ -21,7 +21,7 @@ gli.genes=do.call('rbind',lapply(gliomanf1$id,function(x){
         
 }))
 
-full.tab<-gli.genes%>%left_join(rename(gliomanf1,used='id'),by='used')
+full.tab<-gli.genes%>%left_join(rename(gliomanf1,used='id'),by='used')%>%select(-c(ROW_ID,ROW_VERS))
 
 pub.table='syn20449214'
 synStore(Table(pub.table,full.tab))
