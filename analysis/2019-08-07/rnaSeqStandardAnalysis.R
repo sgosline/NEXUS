@@ -110,7 +110,7 @@ tumorTypeDiffEx<-function(tab){
   kk <- clusterProfiler::enrichKEGG(gene = genes, organism = "hsa", 
     pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.05)
   combined<-rbind(data.frame(paths=rep('GO',nrow(ego)),ego),
-      cbind(paths=rep("KEGG",nrow(kk)),kk))
+      data.frame(paths=rep("KEGG",nrow(kk)),kk))
   message(paste(dim(combined),collapse=','))
   combined$condition=rep(con,nrow(combined))
   message(paste(dim(combined),collapse=','))
@@ -175,8 +175,8 @@ write.csv(countsTab,paste0(prefix,'countsTab.csv'))
 counts<-plotCounts(tab,prefix)
 
 #doGSVA
-gs<-runGSVA(tab,prefix)
-write.csv(gs,paste0(prefix,'GSVAPathwayScores.csv'))
+#gs<-runGSVA(tab,prefix)
+#write.csv(gs,paste0(prefix,'GSVAPathwayScores.csv'))
 
 #doDiffEx
 diffex<-tumorTypeDiffEx(tab)
@@ -188,3 +188,9 @@ dds<-getDDS(tab)
 res<-plotPCA(dds,prefix)
 
 #store
+this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-08-07/rnaSeqStandardAnalysis.R'
+
+synapser::synLogin()
+parentid='syn20683372'
+for(fi in list.files('.'))
+  synapser::synStore(synapser::File(fi,parentId=parentid,annotations=list(resourceType='analysis',diagnosis='Neurofibromatosis 1',isMultiSpecimen='TRUE',isMultiIndividual='TRUE')),used='syn20449214',executed=this.script)
