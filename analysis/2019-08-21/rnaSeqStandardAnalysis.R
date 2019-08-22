@@ -10,7 +10,7 @@ sampleCounts<-function(tab,prefix){
 }
 
 # PCA plot
-plotPCA<-function(dds,prefix=''){
+plotPCA<-function(dds,prefix='',labels=TRUE){
   #tab, xlim=0,ylim=0,scale=FALSE,prefix=''){
   require(ggplot2)
   vsd <- vst(dds, blind = FALSE)
@@ -20,15 +20,21 @@ plotPCA<-function(dds,prefix=''){
   
   percentVar <- round(100 * attr(p, "percentVar"))
   pdf(paste(prefix,'RNASeqDataPCA.pdf',sep=''),width='960',height='960')
-  
+  if(labels){
   p2<-ggplot(p, aes(PC1, PC2, color = tumorType, shape = sampleType, 
     label = vsd$individualID)) + geom_point(size = 3) + 
     xlab(paste0("PC1: ", percentVar[1], "% variance")) + 
     ylab(paste0("PC2: ", percentVar[2], "% variance")) + 
     coord_fixed() + ggrepel::geom_text_repel()
-  
+  }else{
+    p2<-ggplot(p, aes(PC1, PC2, color = tumorType, shape = sampleType)) + geom_point(size = 3) + 
+      xlab(paste0("PC1: ", percentVar[1], "% variance")) + 
+      ylab(paste0("PC2: ", percentVar[2], "% variance")) + 
+      coord_fixed() 
+  }
   print(p2)
   dev.off()
+  vsd
   
 }
 
