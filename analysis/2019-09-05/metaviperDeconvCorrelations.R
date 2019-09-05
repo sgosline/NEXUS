@@ -55,8 +55,9 @@ apply(cor_cell_types,1,function(x){
   ggsave(paste0(m,'predictions of',gsub(" ","",gsub("/","",ct)),'cor0.75.pdf'))
 })
 
+this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-09-05/metavaiperDeconvCorrelations.R'
 parentid='syn20710537'
-for(fi in list.files('.'))
+for(fi in list.files('.')[grep('tions',list.files('.'))])
   synapser::synStore(synapser::File(fi,parentId=parentid,annotations=list(resourceType='analysis',isMultiSpecimen='TRUE',isMultiIndividual='TRUE')),used=c(deconv_scores,metaviper_scores),executed=this.script)
 
 

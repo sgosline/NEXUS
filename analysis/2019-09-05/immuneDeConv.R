@@ -51,7 +51,7 @@ runImmuneDeconv<-function(tab,method){
 }
 
 #store
-this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-09-05/tumorDeConv.R'
+this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-09-05/immuneDeConv.R'
 
 
 
@@ -63,5 +63,5 @@ for(m in c('mcp_counter','xcell')){
 
 
 parentid='syn20710537'
-for(fi in list.files('.'))
+for(fi in list.files('.')[grep('Preds.pdf',list.files('.'))])
   synapser::synStore(synapser::File(fi,parentId=parentid,annotations=list(resourceType='analysis',isMultiSpecimen='TRUE',isMultiIndividual='TRUE')),used='syn20449214',executed=this.script)
