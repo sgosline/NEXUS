@@ -222,7 +222,7 @@ pheatmap(log2(0.01+xtab),annotation_col=df,cellheight = 10,cellwidth=10,file=pas
 
 
 #store
-this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-09-04/rnaSeqStandardAnalysis.R'
+this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-09-03/rnaSeqStandardAnalysis.R'
 
 synapser::synLogin()
 parentid='syn20683408'
