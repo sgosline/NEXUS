@@ -34,9 +34,28 @@ gsva.tid<-gsva%>%
     gather(key=specimenID,value=score,-pathway)%>%
   left_join(tab,by='specimenID')
 
-ggplot(gsva.tid[grep('COMPLEMENT',gsva.tid$pathway),])+geom_boxplot(aes(x=pathway,y=score,fill=tumorType))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+gsva.tis=subset(gsva.tid,sampleType=='tissue')
 
-ggplot(gsva.tid[grep('TARGETS',gsva.tid$pathway),])+geom_boxplot(aes(x=pathway,y=score,fill=tumorType))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggplot(gsva.tis[grep('COMPLEMENT',gsva.tis$pathway),])+geom_boxplot(aes(x=pathway,y=score,fill=tumorType))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('complement.png')
+
+ggplot(gsva.tis[grep('_ALK_',gsva.tis$pathway),])+geom_boxplot(aes(x=pathway,y=score,fill=tumorType))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('alk.png')
+ggplot(gsva.tis[intersect(grep('FIBROBLAST',gsva.tis$pathway),grep('ASSOCIATED',gsva.tis$pathway)),])+geom_boxplot(aes(x=pathway,y=score,fill=tumorType))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('fib.png')
+ggplot(gsva.tis[grep('VEGF',gsva.tis$pathway),])+geom_boxplot(aes(x=pathway,y=score,fill=tumorType))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('vegf.png')
+
+ggplot(gsva.tis[grep('FGF',gsva.tis$pathway),])+geom_boxplot(aes(x=pathway,y=score,fill=tumorType))+theme(axis.text.x = element_text(angle = 45, hjust = 1))
+ggsave('fgf.png')
+
+gsva.mat<-gsva.tis%>%
+    select(specimenID,pathway,score)%>%
+    spread(key=pathway,value=score)%>%
+    setRownames(specimenID)
+
+#load up limma
+#do design matrix with tumorType
 
 
 

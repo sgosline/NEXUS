@@ -15,8 +15,7 @@ plotPCA<-function(dds,prefix='',labels=TRUE){
   require(ggplot2)
   vsd <- vst(dds, blind = FALSE)
   
-  p <- DESeq2::plotPCA(vsd, intgroup = c("individualID", "tumorType", 
-    "sampleType"), returnData = TRUE)
+  p <- DESeq2::plotPCA(vsd, intgroup = c("individualID", "tumorType","sampleType"), returnData = TRUE)
   
   percentVar <- round(100 * attr(p, "percentVar"))
   pdf(paste(prefix,'RNASeqDataPCA.pdf',sep=''),width='960',height='960')
@@ -128,18 +127,16 @@ tumorTypeDiffEx<-function(tab){
 }
 
 
-
-
 getDDS<-function(tab){
   require(DESeq2)
-  detach('package:synapser', unload=TRUE)
-  unloadNamespace('PythonEmbedInR')
-  samps<-dplyr::select(tab,tumorType,specimenID,sampleType,individualID)%>%distinct()
+  try(detach('package:synapser', unload=TRUE))
+  try(unloadNamespace('PythonEmbedInR'))
+  samps<-dplyr::select(tab,tumorType,specimenID,sampleType,individualID)%>%unique()
   rownames(samps)<-samps$specimenID
   mat<-reshape2::acast(tab,Symbol~specimenID,value.var='totalCounts',fun.aggregate=sum)
-  
-  dds <- DESeq2::DESeqDataSetFromMatrix(countData = round(mat[,samps$specimenID]), 
-    colData =samps,design = ~tumorType)
+  mat<-round(mat[,samps$specimenID])
+  dds <- DESeq2::DESeqDataSetFromMatrix(countData = mat,
+    colData =DataFrame(samps),~tumorType)
   #copied from Xengie's markdwon
   ### filter out reads with low counts
   keep <- rowSums(counts(dds)) >= 10
@@ -155,7 +152,7 @@ require(synapser)
 synLogin()
 
 ##get table query
-tab<-synTableQuery('select * from syn20449214')$asDataFrame()
+tab<-synTableQuery('SELECT * FROM syn20449214 WHERE ( ( "studyName" = \'A Nerve Sheath Tumor Bank from Patients with NF1\' ) )')$asDataFrame()
 
 tab$sampleType<-apply(tab,1,function(x){
   if(!is.na(x[['transplantationType']]) && x[['transplantationType']]=='xenograft')
@@ -163,12 +160,14 @@ tab$sampleType<-apply(tab,1,function(x){
   else if (!is.na(x[['isCellLine']])&&(x[['isCellLine']]=='TRUE' || x[['isCellLine']]=='True'))
     return('cell line')
   else
+
     return('tissue')})
 
 tab$tumorType[is.na(tab$tumorType)]<-'None'
 tab$diagnosis[is.na(tab$diagnosis)]<-'None'
+
 tab$isCellLine[is.na(tab$isCellLine)]<-'FALSE'
-tab$isCellLine<-toupper(tab$isCelline)
+tab$isCellLine<-toupper(tab$isCellLine)
 
 tab$specimenID<-sapply(tab$specimenID,function(x)
   gsub('Neurofibroma','NF',
@@ -176,30 +175,53 @@ tab$specimenID<-sapply(tab$specimenID,function(x)
       gsub('Cutaneous ',"c",
         gsub('Malignant Peripheral Nerve Sheath Tumor','MPNST',x)))))
 
-prefix='allPublicData'
+prefix='allPublicBiobank'
+
 #get sample counds
 countsTab<-sampleCounts(tab,prefix)
 write.csv(countsTab,paste0(prefix,'countsTab.csv'))
 
 
 #plotCounts
-counts<-plotCounts(tab,prefix)
+if(length(unique(tab$specimenID))<50)
+  counts<-plotCounts(tab,prefix)
 
 #doGSVA
-gs<-runGSVA(tab,prefix)
-write.csv(gs,paste0(prefix,'GSVAPathwayScores.csv'))
+#gs<-runGSVA(tab,prefix)
+#write.csv(gs,paste0(prefix,'GSVAPathwayScores.csv'))
+
+dds<-getDDS(tab)
+
+#doPCA
+res<-plotPCA(dds,prefix,labels=F)
 
 #doDiffEx
 diffex<-tumorTypeDiffEx(tab)
 write.csv(diffex,paste0(prefix,'EnrichedGenesPaths.csv'))
 
-dds<-getDDS(tab)
 
-#doPCA
-res<-plotPCA(dds,prefix)
+df<-dplyr::select(tab,c(study,sex,tumorType,sampleType,specimenID))%>%unique()
+rownames(df)<-df$specimenID
+df<-select(df,-specimenID)
+
+#run MCP counter
+library(immunedeconv)
+mres<-deconvolute(assay(dds),'mcp_counter')
+xres<-deconvolute(assay(dds),'xcell')
+
+mtab<-mres%>%select(-cell_type)%>%as.data.frame()
+rownames(mtab)<-mres$cell_type
+
+xtab<-xres%>%select(-cell_type)%>%as.data.frame()
+rownames(xtab)<-xres$cell_type
+df<-select(df,)
+library(pheatmap)
+pheatmap(log2(mtab+0.01),annotation_col=df,cellheight = 10,cellwidth=10,file=paste0(prefix,'mcpCounterPrds.pdf'))
+
+pheatmap(log2(0.01+xtab),annotation_col=df,cellheight = 10,cellwidth=10,file=paste0(prefix,'xcellCounterPrds.pdf'))
 
 #store
-this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-08-21/rnaSeqStandardAnalysis.R'
+this.script='https://raw.githubusercontent.com/sgosline/NEXUS/master/analysis/2019-09-04/rnaSeqStandardAnalysis.R'
 
 synapser::synLogin()
 parentid='syn20683408'
