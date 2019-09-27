@@ -49,9 +49,27 @@ for(meth in unique(sigs$method)){
   tab.t=subset(tab,tumorType%in%sigs.t$tumorType)%>%subset(method==meth)%>%subset(cell_type%in%sigs.t$cell_type)
     
   #  tab.p<-subset(tab.t,method==meth)%>%subset(cell_type%in%(sigs.t$cell_type))
- p<-ggplot(tab.t)+geom_boxplot(aes(x=cell_type,fill=sex,y=score))+facet_grid(.~tumorType)+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
+ p<-ggplot(tab.t,palette='jco')+geom_boxplot(aes(x=cell_type,fill=sex,y=score))+facet_grid(.~tumorType)+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
  # p<-ggboxplot(subset(tab.t,cell_type=='Neutrophil'),x='tumorType',y='score',color='sex',palette='jco')+stat_compare_means(method='t.test')+ theme(axis.text.x = element_text(angle = 45, hjust = 1))
   print(p)
   ggsave(paste0(meth,'TTdiffs.png'))
   
 }
+
+
+for(meth in unique(sigs$method)){
+  sigs.t=subset(sigs,method==meth)
+  for(tu in sigs.t$tumorType){
+  #  for(tu in unique(sigs$tumorType)){
+  tab.t=subset(tab,tumorType==tu)%>%
+      subset(method==meth)%>%
+        subset(cell_type%in%sigs.t$cell_type)
+  #  tab.p<-subset(tab.t,method==meth)%>%subset(cell_type%in%(sigs.t$cell_type))
+  p<-ggplot(tab.t,palette='jco')+geom_boxplot(aes(x=cell_type,fill=sex,y=score))+facet_grid(.~tumorType)+ theme(axis.text.x = element_text(angle = 90, hjust = 1))
+  # p<-ggboxplot(subset(tab.t,cell_type=='Neutrophil'),x='tumorType',y='score',color='sex',palette='jco')+stat_compare_means(method='t.test')+ theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  print(p)
+  ggsave(paste0(meth,tu,'diffs.png'))
+  }
+}
+  
+
