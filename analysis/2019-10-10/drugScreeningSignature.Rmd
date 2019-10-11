@@ -1,0 +1,92 @@
+---
+title: "Drug Screening Signature Generation"
+author: "Sara Gosline"
+date: "10/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(reticulate)
+synapse <- import("synapseclient")
+syn <- synapse$Synapse()
+syn$login()
+require(tidyverse)
+require(pheatmap)
+library(DT)
+```
+
+## Drug sensitivity data
+The first we want to collect the drug sensitivity data from the NF Data Portal. We collect all the data from digoxin screens, including those from the pNF data.
+
+This analysis tries to build a gene signature of digoxin response. Not super successful. 
+
+
+```{r drug data}
+tab<-syn$tableQuery("SELECT distinct model_name,response_type,response,response_unit,symptom_name,disease_name FROM syn20556439 where DT_explorer_internal_id= 11218 and disease_name in ('NF1','no disease') and organism_name='human'")$asDataFrame()
+datatable(tab)
+#plot data
+
+p<-ggplot(subset(tab,response_type!='IC50_abs'))+geom_boxplot(aes(x=response_type,y=response,color=symptom_name))
+print(p)
+
+p<-ggplot(subset(tab,response_type!='IC50_abs'))+geom_boxplot(aes(x=response_type,y=response,color=disease_name))
+print(p)
+```
+
+It's important to remember that the 'no symptom' data includes both NF1 knockout cell lines and WT. So we can compare the NF1 disease vs. non-NF1 cells. But this isn't a great comparison since we have the pNFS included. Here are the results without the pNF data
+
+```{r}
+auc.data<- subset(tab,symptom_name=='no symptom')%>%
+    arrange(disease_name)
+datatable(auc.data)
+
+p<-ggplot(subset(auc.data,response_type!='IC50_abs'))+geom_boxplot(aes(x=response_type,y=response,color=disease_name))
+print(p)
+```
+
+## Gene Expression Data
+
+Now we can get the gene expression data and filter for those tumors
+```{r gene expression data, echo=FALSE}
+
+query=paste0("SELECT * from syn20370978 where (individualID in ('",
+  paste(unique(tab$model_name),collapse="','"),
+    "') OR specimenID in ('",
+  paste(unique(tab$model_name),collapse="','"),"')) ",
+  "AND (experimentalCondition is NULL OR experimentalCondition='DMSO' OR experimentalCondition='untreated' or experimentalCondition='')")
+
+gene.tab<-syn$tableQuery(query)$asDataFrame()
+gene.tab$individualID[is.na(gene.tab$individualID)]<-gene.tab$specimenID[is.na(gene.tab$individualID)]
+gene.tab$individualID<-unlist(gene.tab$individualID)
+#auc.data<-auc.data%>%rename(individualID='model_name')
+auc.data<-tab%>%rename(individualID='model_name')
+gene.with.drug<-gene.tab%>%left_join(auc.data,by='individualID')
+
+```
+
+Ok, we have some samples, still only one NF1-/- one. Will this work?
+```{r DESeq}
+require(DESeq2)
+
+samps<-dplyr::select(gene.with.drug,disease_name,specimenID,individualID,studyName,response,response_type)%>%
+    distinct()%>%
+  subset(response_type=='AUC_Simpson')
+  samps$studyName<-gsub(" Preclinical Models (Minnesota CCHMC Recombinetics)","",samps$studyName,fixed=T)
+
+  rownames(samps)<-samps$specimenID
+  mat<-reshape2::acast(gene.with.drug,Symbol~specimenID,value.var='totalCounts',fun.aggregate=mean)
+  
+  dds <- DESeq2::DESeqDataSetFromMatrix(countData = round(mat[,samps$specimenID]), 
+    colData =samps,design = ~disease_name)
+  #copied from Xengie's markdwon
+  ### filter out reads with low counts
+  keep <- rowSums(counts(dds)) >= 10
+  dds <- dds[keep, ]
+  
+  dds <- DESeq(dds)
+  res <- results(dds, alpha = 0.01)
+  ntd<-normTransform(dds)
+      library(pheatmap)
+   pheatmap(assay(ntd)[which(res$padj<10e-15),],annotation_col = select(samps,-c(specimenID,individualID,response_type)),cellwidth = 10,cellheight=10)
+```
