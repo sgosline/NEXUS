@@ -1,0 +1,203 @@
+---
+title: "Drug Screening Signature Generation"
+author: "Sara Gosline"
+date: "10/11/2019"
+output:
+  pdf_document: default
+  html_document: default
+always_allow_html: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(reticulate)
+synapse <- import("synapseclient")
+syn <- synapse$Synapse()
+syn$login()
+require(tidyverse)
+require(pheatmap)
+library(DT)
+```
+
+## Drug sensitivity data
+The first we want to collect the drug sensitivity data from the NF Data Portal. We collect all the data from digoxin screens, including those from the pNF data.
+
+This analysis tries to build a gene signature of digoxin response using GSVA signatures instead of gene data.
+
+
+```{r drug data}
+#tab<-syn$tableQuery("SELECT distinct model_name,response_type,response,response_unit,symptom_name,disease_name FROM syn20556439 where DT_explorer_internal_id= 11218 and disease_name in ('NF1','no disease') and organism_name='human'")$asDataFrame()
+tab<-syn$tableQuery("SELECT distinct model_name,response_type,response,response_unit,symptom_name,disease_name,DT_explorer_internal_id FROM syn20556439 where disease_name in ('NF1','no disease') and organism_name='human'")$asDataFrame()
+#datatable(tab)
+
+
+##lets get drugs that are tested in both NF1 and knockout and have more than one sample
+##of each
+drugs<-tab%>%subset(response_type!='IC50_abs')%>%
+  group_by(response_type,DT_explorer_internal_id)%>%
+  mutate(numdis=n_distinct(disease_name))%>%
+  mutate(numSamps=n_distinct(model_name))%>%
+  subset(numdis==2)%>%
+  subset(numSamps>4)
+
+#now look for specific drugs that have differential response in NF1 disease!
+dtab<-drugs%>%tibble::rowid_to_column()%>%
+  mutate(nresponse=as.numeric(response))%>%
+  spread(key=disease_name,value=nresponse)%>%
+  group_by(response_type,DT_explorer_internal_id)%>%
+  mutate(pval=wilcox.test(`no disease`,NF1)$p.value)%>%
+  ungroup()%>%group_by(response_type)%>%
+  mutate(correctedP=p.adjust(pval))%>%ungroup()
+
+
+##now we have some that are significant (not passing testing)
+sig.drugs<-subset(dtab,pval<0.005)%>%
+  subset(response_type%in%c('Min_viability','AUC_Simpson'))%>%
+  dplyr::select(DT_explorer_internal_id,response_type,pval)%>%distinct()
+
+dmap<-syn$tableQuery(paste0("SELECT distinct DT_explorer_internal_id,name from syn18506947 where DT_explorer_internal_id in ('",paste0(unique(sig.drugs$DT_explorer_internal_id),collapse="','"),"')"))$asDataFrame()
+
+pvals.with.names<-sig.drugs%>%left_join(dmap,by='DT_explorer_internal_id')
+datatable(pvals.with.names)
+
+```
+
+It's important to remember that the 'no symptom' data includes both NF1 knockout cell lines and WT. So we can compare the NF1 disease vs. non-NF1 cells. But this isn't a great comparison since we have the pNFS included. Here are the results without the pNF data
+
+```{r}
+auc.data<- subset(tab,DT_explorer_internal_id%in%unique(sig.drugs$DT_explorer_internal_id))%>%mutate(Response=as.numeric(response))%>%mutate(drugId=as.character(DT_explorer_internal_id))
+
+p<-ggplot(subset(auc.data,response_type%in%c("AUC_Simpson","Min_viability")))+geom_boxplot(aes(x=drugId,y=Response,color=disease_name))+facet_grid(response_type~.)
+print(p)
+```
+
+Now let's dive into individual compounds so we can explore further. maybe withs ome of their common names
+```{r}
+for(comp in unique(auc.data$drugId)){
+  ddata<-subset(auc.data,response_type%in%c('AUC_Simpson','Min_viability'))%>%
+    subset(drugId=comp)
+  
+  dname=dmap$name[which(dmap$DT_explorer_internal_id==comp)[1]]
+
+  p<-ggplot(ddata)+geom_boxplot(aes(x=response_type,y=Response,color=disease_name))+ggtitle(paste(dname,'(',comp,')response in cells'))
+ print(p)
+}
+```
+
+## Gene Expression Data
+
+Now we can get the gene expression data, map to pathways and find pathways that are unique to specific drug responses. 
+```{r gene expression data, echo=FALSE}
+
+query=paste0("SELECT * from syn20370978 where (individualID in ('",
+  paste(unique(auc.data$model_name),collapse="','"),
+    "') OR specimenID in ('",
+  paste(unique(tab$model_name),collapse="','"),"')) ",
+  "AND (experimentalCondition is NULL OR experimentalCondition='DMSO' OR experimentalCondition='untreated' or experimentalCondition='')")
+
+gene.tab<-syn$tableQuery(query)$asDataFrame()
+gene.tab$individualID[is.na(gene.tab$individualID)]<-gene.tab$specimenID[is.na(gene.tab$individualID)]
+gene.tab$individualID<-unlist(gene.tab$individualID)
+auc.data<-auc.data%>%rename(individualID='model_name')
+#auc.data<-auc.data%>%rename(model_name='individualID')
+gene.with.drug<-gene.tab%>%left_join(auc.data,by='individualID')
+
+```
+
+Ok, we have some samples, and now need to compute GSVA on those samples
+```{r GSVA, warning=FALSE,echo=FALSE}
+require(GSVA)
+require(GSVAdata)
+data('c2BroadSets')
+  library(org.Hs.eg.db)
+
+ 
+#samps<-dplyr::select(gene.with.drug,disease_name,specimenID,individualID,studyName,response,response_type)%>%
+#    distinct()%>%
+#  subset(response_type=='AUC_Simpson')
+#  samps$studyName<-gsub(" Preclinical Models (Minnesota CCHMC Recombinetics)","",samps$studyName,fixed=T)
+
+#  rownames(samps)<-samps$specimenID
+  mat<-reshape2::acast(gene.with.drug,Symbol~individualID,value.var='zScore',fun.aggregate=mean)
+  
+   map<-AnnotationDbi::select(org.Hs.eg.db,columns=c("SYMBOL",'ENTREZID'),keys=keys(org.Hs.eg.db,'ENTREZID'),multiVals=unique(gene.with.drug$Symbol))
+  
+  entrez<-map$ENTREZID[match(rownames(mat),map$SYMBOL)]
+
+  
+    mat<-mat[which(!is.na(entrez)),]
+  rownames(mat)<-entrez[!is.na(entrez)]
+  res=gsva(mat,method='ssgsea',gset.idx.list=c2BroadSets)
+
+  dres<-as.data.frame(res)%>%tibble::rownames_to_column('pathway')%>%
+      gather('individualID','GSVAscore',-pathway)%>%left_join(auc.data,by='individualID')
+
+  corvals<-dres%>%subset(DT_explorer_internal_id%in%sig.drugs$DT_explorer_internal_id)%>%
+    group_by(pathway,DT_explorer_internal_id,response_type)%>%mutate(corVal=cor(GSVAscore,as.numeric(response),method='spearman'))%>%
+    mutate(gsvaVar=var(GSVAscore))%>%ungroup()%>%
+    dplyr::select(pathway,DT_explorer_internal_id,corVal,response_type,gsvaVar)%>%distinct()
+      
+  filtered.corvals<-corvals%>%
+      subset(abs(corVal)>0.9)%>%#highly correlated
+      subset(gsvaVar>0.01)%>%##arbitrary
+      subset(response_type=='AUC_Simpson')##let's just stick with this
+  
+  
+```
+So we have a lot of data, and i'm not sure what to do with it. For now, we can plot a single drug and the pathways it correlates with. First we plot the AUC. 
+
+```{r plot single drug}
+#drugid='277870'
+for(drugid in unique(filtered.corvals$DT_explorer_internal_id)){
+  filtered.corvals$drugname=drugnames=dmap$name[match(filtered.corvals$DT_explorer_internal_id,dmap$DT_explorer_internal_id)]
+  
+  drugname=dmap$name[match(drugid,dmap$DT_explorer_internal_id)]
+
+    pathways<- dplyr::select(subset(filtered.corvals,DT_explorer_internal_id==drugid),pathway,corVal)%>%
+      arrange(desc(abs(corVal)))%>%
+        dplyr::select(pathway)%>%
+        unlist()
+    
+    if(length(pathways)>10)
+      pathways=pathways[1:10]
+
+
+  plot.tab<-dres%>%subset(DT_explorer_internal_id==drugid)%>%
+    subset(pathway%in%pathways)%>%
+    subset(response_type=='AUC_Simpson')%>%
+    mutate('Area Under Curve'=as.numeric(response))%>%
+    rename(GSVAscore='GSEA Score')
+
+
+p<-ggplot(plot.tab)+geom_point(aes(x=`Area Under Curve`,y=`GSEA Score`,col=pathway,shape=disease_name))+ggtitle(paste('Pathways correlated with',drugname,'treatment'))
+print(p)
+}
+```
+
+Because the minimum viability boxplots up top are a little more believable, i will plot those as well.
+
+```{r plot Viability}
+#drugid='277870'
+for(drugid in unique(filtered.corvals$DT_explorer_internal_id)){
+
+    filtered.corvals$drugname=drugnames=dmap$name[match(filtered.corvals$DT_explorer_internal_id,dmap$DT_explorer_internal_id)]
+
+    drugname=dmap$name[match(drugid,dmap$DT_explorer_internal_id)]
+
+     pathways<- dplyr::select(subset(filtered.corvals,DT_explorer_internal_id==drugid),pathway,corVal)%>%
+      arrange(desc(abs(corVal)))%>%
+        dplyr::select(pathway)%>%
+        unlist()   
+    if(length(pathways)>10)
+      pathways=pathways[1:10]
+
+  plot.tab<-dres%>%subset(DT_explorer_internal_id==drugid)%>%
+    subset(pathway%in%pathways)%>%
+    subset(response_type=='Min_viability')%>%
+        mutate(`Minimum Viability (%)`=as.numeric(response))%>%
+  rename(GSVAscore='GSEA Score')
+
+  p<-ggplot(plot.tab)+geom_point(aes(x=`Minimum Viability (%)`,y=`GSEA Score`,col=pathway,shape=disease_name))+ggtitle(paste('Pathways correlated with',drugname,'treatment'))
+  print(p)
+}
+```
